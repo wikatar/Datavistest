@@ -4,3 +4,12 @@ matplotlib==3.7.2
 seaborn==0.12.2 
 streamlit==1.23.1
 plotly==5.14.1
+
+streamlit==1.23.1
+plotly==5.14.1
+
+streamlit==1.23.1
+plotly==5.14.1
+
+streamlit==1.23.1
+plotly==5.14.1

@@ -7,22 +7,29 @@ from kpi_calculations import get_all_kpis, generate_sample_sales_data
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
 
 # Add plotly to requirements.txt
 with open('requirements.txt', 'a') as f:
     f.write('\nstreamlit==1.23.1\nplotly==5.14.1\n')
 
+def calculate_growth_rate(current, previous):
+    """Calculate growth rate between two values."""
+    if previous == 0:
+        return 0
+    return ((current - previous) / previous) * 100
+
 def main():
     # Page config
     st.set_page_config(
-        page_title="Sales KPI Dashboard",
+        page_title="Advanced Sales Analytics Dashboard",
         page_icon="📊",
         layout="wide"
     )
     
     # Title
-    st.title("📊 Sales Performance KPI Dashboard")
-    st.markdown("An interactive dashboard displaying key sales performance indicators")
+    st.title("📊 Advanced Sales Analytics Dashboard")
+    st.markdown("Comprehensive analytics platform for detailed business performance insights")
     
     # Get data
     kpis, df = get_all_kpis()
@@ -60,163 +67,360 @@ def main():
         (df['date'].dt.date <= date_range[1])
     ]
     
-    # Recalculate KPIs based on filtered data
-    filtered_kpis = {}
-    filtered_kpis['total_revenue'] = filtered_df['sales_amount'].sum()
-    filtered_kpis['total_profit'] = (filtered_df['sales_amount'] - filtered_df['cost']).sum()
-    filtered_kpis['profit_margin'] = (filtered_kpis['total_profit'] / filtered_kpis['total_revenue'] * 100) if filtered_kpis['total_revenue'] > 0 else 0
-    filtered_kpis['average_order_value'] = filtered_df['sales_amount'].mean() if not filtered_df.empty else 0
-    filtered_kpis['unique_customers'] = filtered_df['customer_id'].nunique()
+    # Calculate advanced KPIs
+    current_period = filtered_df
+    previous_period = df[
+        (df['date'].dt.date < date_range[0]) &
+        (df['date'].dt.date >= (date_range[0] - (date_range[1] - date_range[0])))
+    ]
     
-    # Top row metrics
+    # Current period KPIs
+    current_revenue = current_period['sales_amount'].sum()
+    current_profit = (current_period['sales_amount'] - current_period['cost']).sum()
+    current_customers = current_period['customer_id'].nunique()
+    current_orders = len(current_period)
+    
+    # Previous period KPIs
+    prev_revenue = previous_period['sales_amount'].sum()
+    prev_profit = (previous_period['sales_amount'] - previous_period['cost']).sum()
+    prev_customers = previous_period['customer_id'].nunique()
+    prev_orders = len(previous_period)
+    
+    # Calculate growth rates
+    revenue_growth = calculate_growth_rate(current_revenue, prev_revenue)
+    profit_growth = calculate_growth_rate(current_profit, prev_profit)
+    customer_growth = calculate_growth_rate(current_customers, prev_customers)
+    order_growth = calculate_growth_rate(current_orders, prev_orders)
+    
+    # Top row metrics with growth indicators
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Revenue", f"${filtered_kpis['total_revenue']:,.2f}")
+        st.metric(
+            "Total Revenue",
+            f"${current_revenue:,.2f}",
+            f"{revenue_growth:+.1f}%"
+        )
     with col2:
-        st.metric("Total Profit", f"${filtered_kpis['total_profit']:,.2f}")
+        st.metric(
+            "Total Profit",
+            f"${current_profit:,.2f}",
+            f"{profit_growth:+.1f}%"
+        )
     with col3:
-        st.metric("Profit Margin", f"{filtered_kpis['profit_margin']:.2f}%")
+        st.metric(
+            "Unique Customers",
+            f"{current_customers:,}",
+            f"{customer_growth:+.1f}%"
+        )
     with col4:
-        st.metric("Unique Customers", f"{filtered_kpis['unique_customers']}")
+        st.metric(
+            "Total Orders",
+            f"{current_orders:,}",
+            f"{order_growth:+.1f}%"
+        )
     
-    # Row 1 - Charts
-    st.markdown("### Sales Performance by Segment")
-    col1, col2 = st.columns(2)
+    # Advanced Metrics Row
+    st.markdown("### Advanced Performance Metrics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    # Calculate advanced metrics
+    avg_order_value = current_revenue / current_orders if current_orders > 0 else 0
+    customer_lifetime_value = current_revenue / current_customers if current_customers > 0 else 0
+    profit_margin = (current_profit / current_revenue * 100) if current_revenue > 0 else 0
+    orders_per_customer = current_orders / current_customers if current_customers > 0 else 0
     
     with col1:
-        # Revenue by Region
-        revenue_by_region = filtered_df.groupby('region')['sales_amount'].sum().reset_index()
-        fig = px.bar(
-            revenue_by_region, 
-            x='region', 
-            y='sales_amount',
-            title='Revenue by Region',
-            labels={'sales_amount': 'Revenue ($)', 'region': 'Region'},
-            color='region',
-            color_discrete_sequence=px.colors.qualitative.Vivid
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
+        st.metric("Average Order Value", f"${avg_order_value:,.2f}")
     with col2:
-        # Revenue by Channel
-        revenue_by_channel = filtered_df.groupby('channel')['sales_amount'].sum().reset_index()
-        fig = px.pie(
-            revenue_by_channel,
-            values='sales_amount',
-            names='channel',
-            title='Revenue by Channel',
-            hole=0.4,
-            color_discrete_sequence=px.colors.sequential.Plasma_r
-        )
-        fig.update_traces(textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
+        st.metric("Customer Lifetime Value", f"${customer_lifetime_value:,.2f}")
+    with col3:
+        st.metric("Profit Margin", f"{profit_margin:.1f}%")
+    with col4:
+        st.metric("Orders per Customer", f"{orders_per_customer:.1f}")
     
-    # Row 2 - Time series & Distribution
-    st.markdown("### Time Trends & Distribution")
+    # Row 1 - Advanced Charts
+    st.markdown("### Sales Performance Analysis")
     col1, col2 = st.columns(2)
     
     with col1:
-        # Monthly Revenue Trend
-        filtered_df['month'] = filtered_df['date'].dt.strftime('%Y-%m')
-        monthly_revenue = filtered_df.groupby('month')['sales_amount'].sum().reset_index()
+        # Revenue by Region with Growth
+        revenue_by_region = current_period.groupby('region').agg({
+            'sales_amount': 'sum',
+            'customer_id': 'nunique'
+        }).reset_index()
         
-        fig = px.line(
-            monthly_revenue,
-            x='month',
-            y='sales_amount',
-            title='Monthly Revenue Trend',
-            labels={'sales_amount': 'Revenue ($)', 'month': 'Month'},
-            markers=True,
-        )
-        fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Sales Amount Distribution
-        fig = px.histogram(
-            filtered_df,
-            x="sales_amount",
-            title="Sales Amount Distribution",
-            nbins=30,
-            color_discrete_sequence=['#22A7F0'],
-            labels={'sales_amount': 'Sales Amount ($)'}
-        )
-        fig.update_layout(bargap=0.1)
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Row 3 - Heatmap & Scatter
-    st.markdown("### Cross-Segment Analysis")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Heatmap for Region/Channel
-        region_channel = pd.crosstab(
-            filtered_df['region'], 
-            filtered_df['channel'], 
-            values=filtered_df['sales_amount'], 
-            aggfunc='sum'
-        ).fillna(0)
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
         
-        fig = px.imshow(
-            region_channel,
-            text_auto=True,
-            aspect="auto",
-            title="Sales Heatmap: Region vs Channel",
-            labels=dict(x="Channel", y="Region", color="Sales Amount"),
-            color_continuous_scale='YlGnBu'
+        fig.add_trace(
+            go.Bar(
+                x=revenue_by_region['region'],
+                y=revenue_by_region['sales_amount'],
+                name="Revenue",
+                marker_color='#1f77b4'
+            ),
+            secondary_y=False
         )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=revenue_by_region['region'],
+                y=revenue_by_region['customer_id'],
+                name="Customers",
+                marker=dict(color='#ff7f0e', size=10)
+            ),
+            secondary_y=True
+        )
+        
         fig.update_layout(
-            xaxis_title="Channel",
-            yaxis_title="Region"
+            title="Revenue and Customer Distribution by Region",
+            xaxis_title="Region",
+            barmode='group'
         )
+        
+        fig.update_yaxes(title_text="Revenue ($)", secondary_y=False)
+        fig.update_yaxes(title_text="Number of Customers", secondary_y=True)
+        
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        # Scatter plot: Quantity vs Sales Amount
-        fig = px.scatter(
-            filtered_df,
-            x="quantity",
-            y="sales_amount",
-            color="channel",
-            title="Quantity vs Sales Amount by Channel",
-            labels={
-                "quantity": "Quantity",
-                "sales_amount": "Sales Amount ($)",
-                "channel": "Channel"
-            },
-            opacity=0.7,
-            size_max=15
+        # Channel Performance Analysis
+        channel_metrics = current_period.groupby('channel').agg({
+            'sales_amount': 'sum',
+            'customer_id': 'nunique',
+            'quantity': 'sum'
+        }).reset_index()
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=channel_metrics['channel'],
+            y=channel_metrics['sales_amount'],
+            name='Revenue',
+            marker_color='#2ecc71'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=channel_metrics['channel'],
+            y=channel_metrics['customer_id'],
+            name='Customers',
+            yaxis='y2',
+            marker=dict(color='#e74c3c', size=10)
+        ))
+        
+        fig.update_layout(
+            title="Channel Performance Analysis",
+            yaxis=dict(title="Revenue ($)"),
+            yaxis2=dict(title="Number of Customers", overlaying="y", side="right"),
+            barmode='group'
         )
+        
         st.plotly_chart(fig, use_container_width=True)
     
-    # Row 4 - Sales Table
-    st.markdown("### Data Table")
+    # Row 2 - Time Series Analysis
+    st.markdown("### Time Series Analysis")
+    col1, col2 = st.columns(2)
     
-    # Aggregate data by date, region, channel
-    agg_data = filtered_df.groupby(['date', 'region', 'channel']).agg({
-        'sales_amount': 'sum',
-        'cost': 'sum',
-        'quantity': 'sum'
-    }).reset_index()
+    with col1:
+        # Daily Revenue Trend with Moving Average
+        daily_revenue = current_period.groupby('date')['sales_amount'].sum().reset_index()
+        daily_revenue['MA7'] = daily_revenue['sales_amount'].rolling(window=7).mean()
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=daily_revenue['date'],
+            y=daily_revenue['sales_amount'],
+            name='Daily Revenue',
+            line=dict(color='#3498db', width=1)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=daily_revenue['date'],
+            y=daily_revenue['MA7'],
+            name='7-day Moving Average',
+            line=dict(color='#e74c3c', width=2)
+        ))
+        
+        fig.update_layout(
+            title="Daily Revenue Trend with Moving Average",
+            xaxis_title="Date",
+            yaxis_title="Revenue ($)",
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     
-    # Calculate profit
-    agg_data['profit'] = agg_data['sales_amount'] - agg_data['cost']
-    agg_data['profit_margin'] = agg_data['profit'] / agg_data['sales_amount'] * 100
+    with col2:
+        # Customer Acquisition Trend
+        daily_customers = current_period.groupby('date')['customer_id'].nunique().reset_index()
+        daily_customers['MA7'] = daily_customers['customer_id'].rolling(window=7).mean()
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=daily_customers['date'],
+            y=daily_customers['customer_id'],
+            name='Daily New Customers',
+            line=dict(color='#2ecc71', width=1)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=daily_customers['date'],
+            y=daily_customers['MA7'],
+            name='7-day Moving Average',
+            line=dict(color='#f1c40f', width=2)
+        ))
+        
+        fig.update_layout(
+            title="Customer Acquisition Trend",
+            xaxis_title="Date",
+            yaxis_title="Number of New Customers",
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     
-    # Format for display
-    display_data = agg_data.copy()
-    display_data['date'] = display_data['date'].dt.date
-    display_data['sales_amount'] = display_data['sales_amount'].map('${:,.2f}'.format)
-    display_data['cost'] = display_data['cost'].map('${:,.2f}'.format)
-    display_data['profit'] = display_data['profit'].map('${:,.2f}'.format)
-    display_data['profit_margin'] = display_data['profit_margin'].map('{:.2f}%'.format)
+    # Row 3 - Product Analysis
+    st.markdown("### Product Performance Analysis")
+    col1, col2 = st.columns(2)
     
-    # Show table
-    st.dataframe(display_data, use_container_width=True)
+    with col1:
+        # Product Performance Matrix
+        product_metrics = current_period.groupby('product_id').agg({
+            'sales_amount': 'sum',
+            'quantity': 'sum',
+            'customer_id': 'nunique'
+        }).reset_index()
+        
+        product_metrics['avg_price'] = product_metrics['sales_amount'] / product_metrics['quantity']
+        
+        fig = px.scatter(
+            product_metrics,
+            x="quantity",
+            y="avg_price",
+            size="sales_amount",
+            color="customer_id",
+            hover_name="product_id",
+            title="Product Performance Matrix",
+            labels={
+                "quantity": "Quantity Sold",
+                "avg_price": "Average Price ($)",
+                "sales_amount": "Total Revenue ($)",
+                "customer_id": "Number of Customers"
+            }
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Product Profitability Analysis
+        product_profit = current_period.groupby('product_id').agg({
+            'sales_amount': 'sum',
+            'cost': 'sum'
+        }).reset_index()
+        
+        product_profit['profit'] = product_profit['sales_amount'] - product_profit['cost']
+        product_profit['profit_margin'] = product_profit['profit'] / product_profit['sales_amount'] * 100
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=product_profit['product_id'],
+            y=product_profit['profit'],
+            name='Profit',
+            marker_color='#2ecc71'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=product_profit['product_id'],
+            y=product_profit['profit_margin'],
+            name='Profit Margin (%)',
+            yaxis='y2',
+            marker=dict(color='#e74c3c', size=10)
+        ))
+        
+        fig.update_layout(
+            title="Product Profitability Analysis",
+            yaxis=dict(title="Profit ($)"),
+            yaxis2=dict(title="Profit Margin (%)", overlaying="y", side="right"),
+            barmode='group'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Row 4 - Customer Analysis
+    st.markdown("### Customer Insights")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Customer Value Distribution
+        customer_value = current_period.groupby('customer_id').agg({
+            'sales_amount': ['sum', 'count']
+        }).reset_index()
+        
+        customer_value.columns = ['customer_id', 'total_spent', 'order_count']
+        customer_value['avg_order_value'] = customer_value['total_spent'] / customer_value['order_count']
+        
+        fig = make_subplots(rows=2, cols=1, subplot_titles=("Customer Value Distribution", "Order Count Distribution"))
+        
+        fig.add_trace(
+            go.Histogram(x=customer_value['total_spent'], name="Total Spent", nbinsx=30),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Histogram(x=customer_value['order_count'], name="Order Count", nbinsx=30),
+            row=2, col=1
+        )
+        
+        fig.update_layout(height=600, showlegend=False)
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Customer Segmentation
+        customer_value['segment'] = pd.qcut(
+            customer_value['total_spent'],
+            q=4,
+            labels=['Low Value', 'Medium Value', 'High Value', 'VIP']
+        )
+        
+        segment_metrics = customer_value.groupby('segment').agg({
+            'customer_id': 'count',
+            'total_spent': 'sum',
+            'order_count': 'mean'
+        }).reset_index()
+        
+        fig = go.Figure(data=[
+            go.Table(
+                header=dict(
+                    values=['Segment', 'Customer Count', 'Total Revenue', 'Avg Orders'],
+                    fill_color='#2ecc71',
+                    align='left'
+                ),
+                cells=dict(
+                    values=[
+                        segment_metrics['segment'],
+                        segment_metrics['customer_id'],
+                        segment_metrics['total_spent'].map('${:,.2f}'.format),
+                        segment_metrics['order_count'].map('{:.1f}'.format)
+                    ],
+                    fill_color='#f8f9fa',
+                    align='left'
+                )
+            )
+        ])
+        
+        fig.update_layout(
+            title="Customer Segmentation Analysis",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     
     # Footer
     st.markdown("---")
-    st.markdown("Dashboard created with Streamlit and Plotly")
+    st.markdown("Advanced Analytics Dashboard created with Streamlit and Plotly")
 
 if __name__ == "__main__":
     main() 

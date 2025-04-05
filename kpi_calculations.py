@@ -11,7 +11,7 @@ def generate_sample_sales_data(rows=1000):
     start_date = end_date - timedelta(days=365)
     dates = [start_date + timedelta(days=x) for x in range((end_date - start_date).days)]
     
-    # Create sample data
+    # Create sample data with more realistic patterns
     data = {
         'date': np.random.choice(dates, size=rows),
         'product_id': np.random.randint(1, 11, size=rows),
@@ -22,13 +22,30 @@ def generate_sample_sales_data(rows=1000):
         'channel': np.random.choice(['Online', 'Store', 'Partner'], size=rows)
     }
     
-    # Calculate cost (60-80% of sales amount)
-    cost_ratio = np.random.uniform(0.6, 0.8, size=rows)
-    data['cost'] = data['sales_amount'] * cost_ratio
-    
-    # Convert to DataFrame
+    # Add some seasonality and trends
     df = pd.DataFrame(data)
     df['date'] = pd.to_datetime(df['date'])
+    
+    # Add weekend effect
+    df['is_weekend'] = df['date'].dt.dayofweek.isin([5, 6])
+    df.loc[df['is_weekend'], 'sales_amount'] *= 1.2
+    
+    # Add monthly seasonality
+    df['month'] = df['date'].dt.month
+    monthly_multipliers = {
+        12: 1.5,  # December
+        11: 1.3,  # November
+        7: 1.2,   # July
+        8: 1.2,   # August
+    }
+    for month, multiplier in monthly_multipliers.items():
+        df.loc[df['month'] == month, 'sales_amount'] *= multiplier
+    
+    # Calculate cost with varying margins by product and channel
+    base_cost_ratio = np.random.uniform(0.6, 0.8, size=rows)
+    channel_multipliers = {'Online': 0.9, 'Store': 1.0, 'Partner': 1.1}
+    df['cost'] = df.apply(lambda x: x['sales_amount'] * base_cost_ratio[x.name] * 
+                         channel_multipliers[x['channel']], axis=1)
     
     return df
 
@@ -48,9 +65,19 @@ def calculate_revenue_kpis(df):
     # Revenue by Channel
     kpis['revenue_by_channel'] = df.groupby('channel')['sales_amount'].sum()
     
+    # Daily Revenue
+    kpis['daily_revenue'] = df.groupby('date')['sales_amount'].sum()
+    
     # Monthly Revenue
     df_monthly = df.set_index('date').resample('M').sum()
     kpis['monthly_revenue'] = df_monthly['sales_amount']
+    
+    # Revenue Growth Rate
+    if len(kpis['daily_revenue']) > 1:
+        kpis['revenue_growth_rate'] = (
+            (kpis['daily_revenue'].iloc[-1] - kpis['daily_revenue'].iloc[0]) / 
+            kpis['daily_revenue'].iloc[0] * 100
+        )
     
     return kpis
 
@@ -71,9 +98,19 @@ def calculate_profitability_kpis(df):
     # Profit by Channel
     kpis['profit_by_channel'] = df.groupby('channel')['profit'].sum()
     
+    # Daily Profit
+    kpis['daily_profit'] = df.groupby('date')['profit'].sum()
+    
     # Monthly Profit
     df_monthly = df.set_index('date').resample('M').sum()
     kpis['monthly_profit'] = df_monthly['profit']
+    
+    # Profit Growth Rate
+    if len(kpis['daily_profit']) > 1:
+        kpis['profit_growth_rate'] = (
+            (kpis['daily_profit'].iloc[-1] - kpis['daily_profit'].iloc[0]) / 
+            kpis['daily_profit'].iloc[0] * 100
+        )
     
     return kpis
 
@@ -81,15 +118,31 @@ def calculate_product_kpis(df):
     """Calculate product-related KPIs."""
     kpis = {}
     
+    # Product Performance Metrics
+    product_metrics = df.groupby('product_id').agg({
+        'sales_amount': 'sum',
+        'quantity': 'sum',
+        'customer_id': 'nunique',
+        'cost': 'sum'
+    }).reset_index()
+    
+    product_metrics['profit'] = product_metrics['sales_amount'] - product_metrics['cost']
+    product_metrics['profit_margin'] = product_metrics['profit'] / product_metrics['sales_amount'] * 100
+    product_metrics['avg_price'] = product_metrics['sales_amount'] / product_metrics['quantity']
+    
+    kpis['product_metrics'] = product_metrics
+    
     # Top Selling Products
-    kpis['top_products_by_revenue'] = df.groupby('product_id')['sales_amount'].sum().sort_values(ascending=False)
+    kpis['top_products_by_revenue'] = product_metrics.sort_values('sales_amount', ascending=False)
     
     # Top Products by Quantity
-    kpis['top_products_by_quantity'] = df.groupby('product_id')['quantity'].sum().sort_values(ascending=False)
+    kpis['top_products_by_quantity'] = product_metrics.sort_values('quantity', ascending=False)
     
-    # Product Profitability
-    product_profit = df.groupby('product_id').apply(lambda x: (x['sales_amount'].sum() - x['cost'].sum()))
-    kpis['product_profitability'] = product_profit.sort_values(ascending=False)
+    # Most Profitable Products
+    kpis['top_products_by_profit'] = product_metrics.sort_values('profit', ascending=False)
+    
+    # Products by Profit Margin
+    kpis['products_by_margin'] = product_metrics.sort_values('profit_margin', ascending=False)
     
     return kpis
 
@@ -97,18 +150,78 @@ def calculate_customer_kpis(df):
     """Calculate customer-related KPIs."""
     kpis = {}
     
+    # Customer Value Metrics
+    customer_metrics = df.groupby('customer_id').agg({
+        'sales_amount': 'sum',
+        'customer_id': 'count',
+        'date': ['min', 'max']
+    }).reset_index()
+    
+    customer_metrics.columns = ['customer_id', 'total_spent', 'order_count', 'first_purchase', 'last_purchase']
+    customer_metrics['avg_order_value'] = customer_metrics['total_spent'] / customer_metrics['order_count']
+    customer_metrics['customer_lifetime_days'] = (
+        customer_metrics['last_purchase'] - customer_metrics['first_purchase']
+    ).dt.days
+    
+    # Customer Segmentation
+    customer_metrics['segment'] = pd.qcut(
+        customer_metrics['total_spent'],
+        q=4,
+        labels=['Low Value', 'Medium Value', 'High Value', 'VIP']
+    )
+    
+    kpis['customer_metrics'] = customer_metrics
+    
     # Total Unique Customers
     kpis['unique_customers'] = df['customer_id'].nunique()
     
     # Average Revenue per Customer
-    customer_revenue = df.groupby('customer_id')['sales_amount'].sum()
-    kpis['avg_revenue_per_customer'] = customer_revenue.mean()
+    kpis['avg_revenue_per_customer'] = customer_metrics['total_spent'].mean()
     
-    # Top Customers
-    kpis['top_customers'] = customer_revenue.sort_values(ascending=False).head(10)
+    # Customer Lifetime Value
+    kpis['customer_lifetime_value'] = kpis['avg_revenue_per_customer']
+    
+    # Orders per Customer
+    kpis['orders_per_customer'] = customer_metrics['order_count'].mean()
     
     # Customer Count by Region
     kpis['customers_by_region'] = df.groupby('region')['customer_id'].nunique()
+    
+    # Customer Count by Channel
+    kpis['customers_by_channel'] = df.groupby('channel')['customer_id'].nunique()
+    
+    # Customer Segmentation Metrics
+    segment_metrics = customer_metrics.groupby('segment').agg({
+        'customer_id': 'count',
+        'total_spent': 'sum',
+        'order_count': 'mean',
+        'avg_order_value': 'mean'
+    }).reset_index()
+    
+    kpis['segment_metrics'] = segment_metrics
+    
+    return kpis
+
+def calculate_operational_kpis(df):
+    """Calculate operational KPIs."""
+    kpis = {}
+    
+    # Daily Orders
+    kpis['daily_orders'] = df.groupby('date').size()
+    
+    # Average Order Value by Channel
+    kpis['avg_order_value_by_channel'] = df.groupby('channel')['sales_amount'].mean()
+    
+    # Average Order Value by Region
+    kpis['avg_order_value_by_region'] = df.groupby('region')['sales_amount'].mean()
+    
+    # Orders per Day
+    kpis['orders_per_day'] = len(df) / df['date'].nunique()
+    
+    # Peak Sales Hours (if time data available)
+    if 'date' in df.columns:
+        df['hour'] = df['date'].dt.hour
+        kpis['sales_by_hour'] = df.groupby('hour')['sales_amount'].sum()
     
     return kpis
 
@@ -121,6 +234,7 @@ def get_all_kpis():
     all_kpis.update(calculate_profitability_kpis(df))
     all_kpis.update(calculate_product_kpis(df))
     all_kpis.update(calculate_customer_kpis(df))
+    all_kpis.update(calculate_operational_kpis(df))
     
     return all_kpis, df
 
@@ -133,5 +247,8 @@ if __name__ == "__main__":
     print(f"Total Profit: ${kpis['total_profit']:.2f}")
     print(f"Profit Margin: {kpis['profit_margin']:.2f}%")
     print(f"Unique Customers: {kpis['unique_customers']}")
+    print(f"Customer Lifetime Value: ${kpis['customer_lifetime_value']:.2f}")
     print("\nRevenue by Region:")
-    print(kpis['revenue_by_region']) 
+    print(kpis['revenue_by_region'])
+    print("\nCustomer Segments:")
+    print(kpis['segment_metrics']) 
