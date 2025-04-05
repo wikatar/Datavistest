@@ -1,6 +1,21 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from sheets_integration import setup_sheets_connection
+
+def get_sales_data():
+    """Get sales data from Google Sheets or generate sample data if not available."""
+    try:
+        # Try to get data from Google Sheets
+        connector = setup_sheets_connection()
+        if connector:
+            return connector.get_sales_data()
+    except Exception as e:
+        print(f"Error connecting to Google Sheets: {e}")
+        print("Falling back to sample data")
+    
+    # Fall back to sample data if Google Sheets connection fails
+    return generate_sample_sales_data()
 
 def generate_sample_sales_data(rows=1000):
     """Generate sample sales data for testing KPIs."""
@@ -226,8 +241,8 @@ def calculate_operational_kpis(df):
     return kpis
 
 def get_all_kpis():
-    """Generate sample data and calculate all KPIs."""
-    df = generate_sample_sales_data()
+    """Get sales data and calculate all KPIs."""
+    df = get_sales_data()
     
     all_kpis = {}
     all_kpis.update(calculate_revenue_kpis(df))

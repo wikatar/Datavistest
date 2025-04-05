@@ -4,6 +4,9 @@ matplotlib==3.7.2
 seaborn==0.12.2 
 streamlit==1.23.1
 plotly==5.14.1
+google-auth-oauthlib==1.0.0
+google-auth-httplib2==0.1.0
+google-api-python-client==2.86.0
 
 streamlit==1.23.1
 plotly==5.14.1
